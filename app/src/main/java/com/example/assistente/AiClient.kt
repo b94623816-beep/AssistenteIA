@@ -8,10 +8,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Conversa com a API da Anthropic (Claude). Chame sempre fora da thread principal. */
+/** Conversa com a API do Gemini (Google). Chame sempre fora da thread principal. */
 object AiClient {
 
-    private const val MODELO = "claude-haiku-5-5"
+    private const val MODELO = "gemini-flash-latest"
 
     private fun sistema(): String {
         val agora = SimpleDateFormat("EEEE, dd/MM/yyyy HH:mm", Locale("pt", "BR")).format(Date())
@@ -39,20 +39,22 @@ Nunca invente números de telefone. Se o usuário não deu número, omita o camp
 
     fun interpretar(apiKey: String, pedido: String): String {
         val corpo = JSONObject()
-            .put("model", MODELO)
-            .put("max_tokens", 600)
-            .put("system", sistema())
-            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", pedido)))
+            .put("system_instruction", JSONObject().put("parts",
+                JSONArray().put(JSONObject().put("text", sistema()))))
+            .put("contents", JSONArray().put(JSONObject()
+                .put("role", "user")
+                .put("parts", JSONArray().put(JSONObject().put("text", pedido)))))
+            .put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
 
-        val con = URL("https://api.anthropic.com/v1/messages").openConnection() as HttpURLConnection
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$MODELO:generateContent"
+        val con = URL(url).openConnection() as HttpURLConnection
         try {
             con.requestMethod = "POST"
             con.connectTimeout = 15000
             con.readTimeout = 30000
             con.doOutput = true
             con.setRequestProperty("content-type", "application/json")
-            con.setRequestProperty("x-api-key", apiKey)
-            con.setRequestProperty("anthropic-version", "2023-06-01")
+            con.setRequestProperty("x-goog-api-key", apiKey)
             con.outputStream.use { it.write(corpo.toString().toByteArray()) }
 
             val codigo = con.responseCode
@@ -60,12 +62,11 @@ Nunca invente números de telefone. Se o usuário não deu número, omita o camp
             val texto = stream.bufferedReader().use { it.readText() }
             if (codigo !in 200..299) throw RuntimeException("API $codigo: $texto")
 
-            val partes = JSONObject(texto).getJSONArray("content")
+            val partes = JSONObject(texto)
+                .getJSONArray("candidates").getJSONObject(0)
+                .getJSONObject("content").getJSONArray("parts")
             return buildString {
-                for (i in 0 until partes.length()) {
-                    val p = partes.getJSONObject(i)
-                    if (p.optString("type") == "text") append(p.getString("text"))
-                }
+                for (i in 0 until partes.length()) append(partes.getJSONObject(i).optString("text"))
             }
         } finally {
             con.disconnect()
