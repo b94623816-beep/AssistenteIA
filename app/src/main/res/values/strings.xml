@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Assistente IA</string>
+    <string name="acc_desc">Permite ao assistente tirar prints e voltar à tela inicial por comando.</string>
+</resources>
